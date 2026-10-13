@@ -1,0 +1,9 @@
+flowchart LR
+    start(["Agent X starts<br/>a session in folder P"]) --> src{"Resumed or<br/>compacted<br/>conversation?"}
+    src -->|yes| skip1["Skip<br/>(same conversation)"]
+    src -->|no| find["Find the newest session in P<br/>from any agent (last 14 days),<br/>ignoring this one and empty ones"]
+    find --> who{"Who did<br/>that work?"}
+    who -->|"nobody"| skip2["Skip"]
+    who -->|"agent X itself"| skip3["Skip<br/>(X's own history covers it)"]
+    who -->|"a different agent"| write["Hand off:<br/>write .relay/ files and<br/>give X the brief"]
+    style write fill:#2f9e72,color:#fff,stroke:#2f9e72

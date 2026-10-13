@@ -1,0 +1,20 @@
+sequenceDiagram
+    autonumber
+    actor You
+    participant CX as Codex (earlier)
+    participant Store as ~/.codex/sessions
+    participant CC as Claude Code (new session)
+    participant Hook as context-relay hook claude
+    participant Repo as project/.relay/
+
+    You->>CX: "Add a total() function to shop.py"
+    CX->>Store: writes messages, tool calls, results (as always)
+    You->>CC: open Claude Code in the same folder
+    CC->>Hook: SessionStart {cwd, session_id, source: "startup"}
+    Hook->>Store: find newest session in this project
+    Note over Hook: newest work was by Codex, not Claude<br/>→ hand off
+    Hook->>Repo: transcripts/codex-….md (everything)<br/>CONTEXT.md (brief)
+    Hook-->>CC: {"hookSpecificOutput": {"additionalContext": "<brief>"}}
+    You->>CC: "continue"
+    CC->>Repo: reads the transcript when it needs detail
+    CC-->>You: carries on from where Codex stopped

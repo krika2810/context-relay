@@ -45,13 +45,7 @@ You hit a rate limit in Claude Code, want Cursor's editor for a refactor, or wan
 something. Every switch means re-explaining the task, what was tried, what was decided and what is
 left. Context Relay removes that step. There is nothing to save, write or copy.
 
-```mermaid
-flowchart LR
-    A["You work with<br/><b>Claude Code</b>"] -->|"switch"| B["Open <b>Codex</b><br/>in the same project"]
-    B --> C["Codex already knows<br/>the task, the decisions,<br/>the edits, the test runs"]
-    C -->|"say 'continue'"| D["Work carries on"]
-    style C fill:#5b4cf2,color:#fff,stroke:#5b4cf2
-```
+![Switch agents and keep working: Claude Code → open Codex → Codex already knows the task → say continue](docs/diagrams/01-why.png)
 
 ## What it looks like
 
@@ -149,54 +143,10 @@ because it runs inside the agents. `relay ui` serves the same window as a web pa
 
 ### Big picture
 
-```mermaid
-flowchart TB
-    subgraph agents["Coding agents (unchanged)"]
-        CC["Claude Code"]
-        CX["Codex"]
-        CU["Cursor"]
-    end
+![Architecture: agents write their own history, Context Relay reads it, builds a handoff and injects it into the next agent](docs/diagrams/02-architecture.png)
 
-    subgraph stores["Session history the agents already write"]
-        S1["~/.claude/projects/*/*.jsonl"]
-        S2["~/.codex/sessions/**/rollout-*.jsonl"]
-        S3["Cursor state.vscdb (SQLite)<br/>~/.cursor/projects/*/agent-transcripts"]
-    end
-
-    CC --> S1
-    CX --> S2
-    CU --> S3
-
-    subgraph engine["Context Relay engine (Python, stdlib only)"]
-        SRC["sources.py<br/>read + normalize sessions"]
-        TR["transcript.py<br/>full transcript + brief"]
-        HO["handoff.py<br/>decide + write .relay/"]
-        GI["gitinfo.py<br/>branch, uncommitted changes"]
-        HK["hooks.py<br/>install/remove hooks"]
-        LA["launch.py<br/>open Terminal / Cursor"]
-        WEB["web.py<br/>relay ui"]
-    end
-
-    S1 & S2 & S3 -->|read-only| SRC
-    SRC --> HO
-    GI --> HO
-    HO --> TR
-    TR -->|".relay/CONTEXT.md<br/>.relay/transcripts/*.md"| FILES[("project/.relay/")]
-
-    subgraph ui["Front ends"]
-        APP["macOS app<br/>window + menu bar<br/>(Swift)"]
-        BROWSER["Browser<br/>(relay ui)"]
-    end
-
-    APP -->|"python3 -m context_relay … --json"| engine
-    BROWSER -->|HTTP on 127.0.0.1| WEB
-
-    HK -->|"writes hook entries"| CFG["~/.claude/settings.json<br/>~/.codex/hooks.json + AGENTS.md<br/>~/.cursor/hooks.json"]
-    CFG -.->|"session start runs<br/>context-relay hook &lt;agent&gt;"| HO
-    HO -.->|"brief injected into<br/>the new session"| agents
-```
-
-There are three layers:
+There are three layers. (The engine also includes `hooks.py`, which installs the session-start
+hooks, `launch.py`, which opens agents, and `web.py`, which serves `relay ui`.)
 
 1. **Agents** keep working exactly as before. Context Relay only *reads* their history.
 2. **The engine** is a small Python package. It turns any agent's session into one normalized
@@ -207,46 +157,14 @@ There are three layers:
 
 ### What happens when you switch agents
 
-```mermaid
-sequenceDiagram
-    autonumber
-    actor You
-    participant CX as Codex (earlier)
-    participant Store as ~/.codex/sessions
-    participant CC as Claude Code (new session)
-    participant Hook as context-relay hook claude
-    participant Repo as project/.relay/
-
-    You->>CX: "Add a total() function to shop.py"
-    CX->>Store: writes messages, tool calls, results (as always)
-    You->>CC: open Claude Code in the same folder
-    CC->>Hook: SessionStart {cwd, session_id, source: "startup"}
-    Hook->>Store: find newest session in this project
-    Note over Hook: newest work was by Codex, not Claude<br/>→ hand off
-    Hook->>Repo: transcripts/codex-….md (everything)<br/>CONTEXT.md (brief)
-    Hook-->>CC: {"hookSpecificOutput": {"additionalContext": "<brief>"}}
-    You->>CC: "continue"
-    CC->>Repo: reads the transcript when it needs detail
-    CC-->>You: carries on from where Codex stopped
-```
+![Sequence of a switch from Codex to Claude Code](docs/diagrams/03-switch-sequence.png)
 
 In a live test, a fresh Claude Code session with **no tools enabled** correctly described the
 function Codex had just added, using only the injected brief.
 
 ### When does a handoff happen?
 
-```mermaid
-flowchart TD
-    start(["Agent X starts a session in folder P"]) --> src{"source = resume<br/>or compact?"}
-    src -->|yes| none1["Do nothing<br/>(same conversation continues)"]
-    src -->|no| find["Find sessions in P from all agents,<br/>newest first, skipping the session<br/>that is starting and empty sessions"]
-    find --> any{"any session<br/>in the last 14 days?"}
-    any -->|no| none2["Do nothing"]
-    any -->|yes| who{"newest one is<br/>also agent X?"}
-    who -->|yes| none3["Do nothing<br/>(X's own history covers it)"]
-    who -->|no| write["Write .relay/transcripts/… + CONTEXT.md<br/>and return the brief to X"]
-    style write fill:#2f9e72,color:#fff,stroke:#2f9e72
-```
+![Decision flow for when a handoff happens](docs/diagrams/04-handoff-decision.png)
 
 The **Continue in…** buttons skip the "same agent" check, because you asked explicitly.
 
@@ -267,20 +185,7 @@ on export, so handoffs never nest inside each other.
 
 ### How context reaches each agent
 
-```mermaid
-flowchart LR
-    subgraph install["relay hooks install (first launch)"]
-        L["~/.relay/bin/context-relay<br/>(launcher → engine inside the app)"]
-    end
-    L --> C1["~/.claude/settings.json<br/>hooks.SessionStart"]
-    L --> C2["~/.codex/hooks.json<br/>hooks.SessionStart"]
-    L --> C3["~/.codex/AGENTS.md<br/>'run context-relay pull --for codex'"]
-    L --> C4["~/.cursor/hooks.json<br/>hooks.sessionStart"]
-    C1 --> O1["additionalContext"]
-    C2 --> O1
-    C3 --> O2["Codex runs the command<br/>and reads the brief"]
-    C4 --> O3["additional_context"]
-```
+![Where the session-start hooks are installed for each agent](docs/diagrams/05-hook-wiring.png)
 
 - **Your entries are untouched.** Context Relay recognizes its own hook entries by the launcher
   path and edits nothing else. Each config file is backed up once (`*.relay-backup`).
@@ -328,7 +233,9 @@ context-relay/
 │   └── main.swift          Entry point + --self-test / --snapshot modes
 ├── scripts/
 │   ├── build-app.sh        Universal .app + zip, using only the Command Line Tools
-│   └── make-icon.swift     Draws the app icon
+│   ├── make-icon.swift     Draws the app icon
+│   └── render-diagrams.sh  Renders docs/diagrams/*.mmd → PNGs for this README
+├── docs/diagrams/          Diagram sources (.mmd) and rendered images (.png)
 ├── tests/test_relay.py     End-to-end tests against fake agent stores
 └── pyproject.toml
 ```
@@ -367,6 +274,10 @@ PYTHONPATH="dist/Context Relay.app/Contents/Resources/engine" python3 -m context
 "$APP" --self-test /tmp/s.json           # prints the menu structure
 "$APP" --snapshot /tmp/s.json out.png    # renders the window to a PNG
 ```
+
+**Diagrams:** the README's diagrams are PNGs rendered from the Mermaid sources in
+`docs/diagrams/*.mmd`, so they show up everywhere, including GitHub mobile, IDE previews and
+package sites. After editing a `.mmd` file, run `scripts/render-diagrams.sh` (needs Node.js).
 
 The tests build fake Claude Code, Codex and Cursor stores (including a real SQLite Cursor DB) in a
 temporary `HOME`. They then run the real CLI and cover:

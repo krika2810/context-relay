@@ -1,0 +1,43 @@
+flowchart LR
+    subgraph A["① Agents work as usual"]
+        direction TB
+        CC["Claude Code"]
+        CX["Codex"]
+        CU["Cursor"]
+    end
+
+    subgraph H["② Their own session history"]
+        direction TB
+        S1["~/.claude/projects/…/*.jsonl"]
+        S2["~/.codex/sessions/…/rollout-*.jsonl"]
+        S3["Cursor chat database<br/>(state.vscdb)"]
+    end
+
+    subgraph E["③ Context Relay engine (Python)"]
+        direction TB
+        SRC["sources.py<br/>read + normalize sessions"]
+        GI["gitinfo.py<br/>branch + uncommitted changes"]
+        HO["handoff.py<br/>is a handoff needed?"]
+        TR["transcript.py<br/>full transcript + short brief"]
+        SRC --> HO
+        GI --> HO
+        HO --> TR
+    end
+
+    subgraph O["④ Handoff"]
+        direction TB
+        F["project/.relay/<br/>CONTEXT.md + transcripts/"]
+        N["Next agent's new session<br/>starts with the brief"]
+    end
+
+    CC --> S1
+    CX --> S2
+    CU --> S3
+    S1 & S2 & S3 -->|"read-only"| SRC
+    TR --> F
+    TR -->|"session-start hook"| N
+
+    UI["macOS app<br/>window + menu bar"] -.->|"JSON commands"| E
+
+    style O fill:#eef9f3,stroke:#2f9e72
+    style N fill:#2f9e72,color:#fff,stroke:#2f9e72
