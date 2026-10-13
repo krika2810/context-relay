@@ -1,0 +1,21 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "context-relay"
+version = "0.2.0"
+description = "Hand off coding context between Claude Code, Cursor and Codex"
+readme = "README.md"
+requires-python = ">=3.8"
+license = { text = "MIT" }
+dependencies = []
+
+[project.scripts]
+relay = "context_relay.cli:main"
+
+[tool.setuptools]
+packages = ["context_relay"]
+
+[tool.setuptools.package-data]
+context_relay = ["*.html"]

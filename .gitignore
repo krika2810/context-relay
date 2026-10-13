@@ -1,0 +1,9 @@
+__pycache__/
+*.pyc
+*.egg-info/
+build/
+dist/
+.DS_Store
+# Context Relay's own per-project output (contains session transcripts)
+.relay/
+.cursor/rules/relay-handoff.mdc

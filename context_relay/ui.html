@@ -1,0 +1,235 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Context Relay</title>
+<style>
+  :root {
+    --bg: #f5f5f7; --card: #ffffff; --text: #1d1d1f; --muted: #6e6e73; --line: rgba(0,0,0,.09);
+    --accent: #5b4cf2; --accent-2: #9e47db; --btn: #ececf0; --btn-hover: #e2e2e8;
+    --ok: #1f9d55; --warn: #d97706; --err: #d93025;
+    --claude: #d9785a; --codex: #2f9e72; --cursor: #4c73f2;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #1e1e20; --card: #2a2a2d; --text: #f2f2f4; --muted: #a1a1a8; --line: rgba(255,255,255,.08);
+      --btn: #3a3a3e; --btn-hover: #46464b;
+    }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; font: 14px/1.45 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+         background: var(--bg); color: var(--text); }
+  main { max-width: 860px; margin: 0 auto; padding: 22px 20px 70px; }
+  header { display: flex; align-items: center; gap: 14px; margin-bottom: 18px; }
+  .logo { width: 44px; height: 44px; border-radius: 11px; flex: none;
+          background: linear-gradient(135deg, var(--accent), var(--accent-2)); display: grid; place-items: center; }
+  h1 { font-size: 21px; margin: 0; }
+  .sub { color: var(--muted); }
+  .banner { display: flex; gap: 12px; align-items: flex-start; padding: 13px 14px; border-radius: 12px; margin-bottom: 18px; }
+  .banner.on { background: color-mix(in srgb, var(--ok) 11%, transparent); }
+  .banner.off { background: color-mix(in srgb, var(--warn) 13%, transparent); }
+  .dot { width: 9px; height: 9px; border-radius: 50%; margin-top: 6px; flex: none; }
+  .banner b { display: block; }
+  .banner .grow { flex: 1; }
+  h2 { font-size: 15px; margin: 6px 0 10px; }
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 13px 14px; margin-bottom: 11px; }
+  .row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+  .name { font-weight: 650; font-size: 15px; overflow-wrap: anywhere; }
+  .badge { font-size: 12px; font-weight: 650; padding: 1px 8px; border-radius: 999px; }
+  .when { margin-left: auto; color: var(--muted); font-size: 12px; }
+  .path { color: var(--muted); font-size: 12px; margin: 3px 0 6px; overflow-wrap: anywhere; }
+  .last { margin-bottom: 3px; }
+  .git { color: var(--muted); font-size: 12px; margin-bottom: 9px; }
+  .label { color: var(--muted); }
+  button { font: inherit; border: 0; border-radius: 7px; padding: 5px 11px; background: var(--btn); color: var(--text); cursor: pointer; }
+  button:hover { background: var(--btn-hover); }
+  button:disabled { opacity: .5; cursor: default; }
+  button.primary { background: var(--accent); color: #fff; }
+  button.link { background: none; color: var(--accent); padding: 5px 4px; }
+  .spacer { flex: 1; }
+  details { margin-top: 8px; color: var(--muted); font-size: 12px; }
+  details li { margin: 2px 0; }
+  .empty, .loading { color: var(--muted); text-align: center; padding: 40px 0; }
+  .error { color: var(--err); margin: 8px 0 14px; }
+  footer { position: fixed; bottom: 0; left: 0; right: 0; background: var(--bg); border-top: 1px solid var(--line); }
+  footer .inner { max-width: 860px; margin: 0 auto; padding: 9px 20px; display: flex; gap: 10px; align-items: center; }
+  #notice { color: var(--muted); font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  dialog { border: 1px solid var(--line); border-radius: 14px; background: var(--card); color: var(--text);
+           width: min(760px, 94vw); max-height: 86vh; padding: 0; }
+  dialog::backdrop { background: rgba(0,0,0,.4); }
+  .dlg-head { display: flex; align-items: center; gap: 10px; padding: 14px 16px; border-bottom: 1px solid var(--line); }
+  .dlg-head h3 { margin: 0; font-size: 16px; flex: 1; }
+  .dlg-body { padding: 14px 16px; overflow: auto; max-height: calc(86vh - 60px); }
+  .dlg-body ol { padding-left: 20px; }
+  .dlg-body li { margin-bottom: 10px; }
+  .prompt { background: var(--bg); border: 1px solid var(--line); border-radius: 8px; padding: 10px; margin: 6px 0;
+            font: 13px ui-monospace, SFMono-Regular, Menlo, monospace; white-space: pre-wrap; user-select: all; }
+  pre.file { white-space: pre-wrap; word-break: break-word; font: 12.5px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace; margin: 0; }
+</style>
+</head>
+<body>
+<main>
+  <header>
+    <div class="logo">
+      <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M20 11a8 8 0 0 0-14.3-4.9L4 8"/><path d="M4 3v5h5"/><path d="M4 13a8 8 0 0 0 14.3 4.9L20 16"/><path d="M20 21v-5h-5"/>
+      </svg>
+    </div>
+    <div>
+      <h1>Context Relay</h1>
+      <div class="sub">Switch between Claude Code, Codex and Cursor without losing context.</div>
+    </div>
+  </header>
+  <div id="banner"></div>
+  <div id="error" class="error" hidden></div>
+  <div id="projects"><div class="loading">Reading agent sessions…</div></div>
+</main>
+<footer><div class="inner">
+  <span id="notice"></span><span class="spacer"></span>
+  <span id="updated" class="label" style="font-size:12px"></span>
+  <button id="refresh">Refresh</button>
+</div></footer>
+
+<dialog id="dlg">
+  <div class="dlg-head"><h3 id="dlg-title"></h3><button id="dlg-close">Close</button></div>
+  <div class="dlg-body" id="dlg-body"></div>
+</dialog>
+
+<script>
+const AGENTS = { claude: "Claude Code", codex: "Codex", cursor: "Cursor" };
+const $ = (id) => document.getElementById(id);
+const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+const name = (a) => AGENTS[a] || a;
+let busy = false;
+
+function ago(iso) {
+  const t = Date.parse(iso); if (!t) return "";
+  const s = Math.max(0, (Date.now() - t) / 1000);
+  if (s < 60) return "just now";
+  if (s < 3600) return `${Math.floor(s / 60)}m ago`;
+  if (s < 86400) return `${Math.floor(s / 3600)}h ago`;
+  return `${Math.floor(s / 86400)}d ago`;
+}
+const badge = (a) => `<span class="badge" style="color:var(--${a});background:color-mix(in srgb,var(--${a}) 16%,transparent)">${esc(name(a))}</span>`;
+
+async function api(path, body) {
+  const res = await fetch(path, body ? { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) } : {});
+  const ctype = res.headers.get("Content-Type") || "";
+  return ctype.includes("json") ? res.json() : res.text();
+}
+
+function renderBanner(hooks) {
+  const on = Object.keys(AGENTS).every((a) => hooks[a]);
+  $("banner").innerHTML = `<div class="banner ${on ? "on" : "off"}">
+    <span class="dot" style="background:var(--${on ? "ok" : "warn"})"></span>
+    <div class="grow"><b>Auto-handoff is ${on ? "on" : "off"}</b>
+      <span class="sub">${on
+        ? "Start a different agent in a project and it automatically receives the previous agent's full session. Codex asks once to review the hook: approve it."
+        : "Turn it on so new agent sessions automatically receive the previous agent's work."}</span></div>
+    <button id="hooks-btn">${on ? "Turn Off" : "Turn On"}</button></div>`;
+  $("hooks-btn").onclick = async () => {
+    $("hooks-btn").disabled = true;
+    const r = await api("/api/hooks", { action: on ? "uninstall" : "install" });
+    if (!r.ok) showError(r.error);
+    load(true);
+  };
+}
+
+function renderProjects(projects) {
+  if (!projects.length) {
+    $("projects").innerHTML = `<div class="empty">No agent sessions yet. Work in Claude Code, Codex or Cursor and your projects appear here.</div>`;
+    return;
+  }
+  $("projects").innerHTML = `<h2>Recent projects</h2>` + projects.map((p, i) => {
+    const last = p.sessions[0];
+    const git = [p.branch && `Branch ${esc(p.branch)}`,
+                 p.changed_files != null && (p.changed_files ? `${p.changed_files} uncommitted file${p.changed_files === 1 ? "" : "s"}` : "clean")]
+                .filter(Boolean).join(" · ");
+    return `<div class="card">
+      <div class="row"><span class="name">${esc(p.name)}</span>${badge(p.last_agent)}<span class="when">${ago(p.last_active)}</span></div>
+      <div class="path">${esc(p.path)}</div>
+      ${last && last.title ? `<div class="last">Last: ${esc(name(p.last_agent))} — ${esc(last.title)}</div>` : ""}
+      ${git ? `<div class="git">${git}</div>` : ""}
+      <div class="row">
+        <span class="label">Continue in</span>
+        ${Object.keys(AGENTS).map((a) => `<button data-continue="${a}" data-i="${i}">${AGENTS[a]}</button>`).join("")}
+        <span class="spacer"></span>
+        ${p.has_context ? `<button class="link" data-view="${esc(p.path)}/.relay/CONTEXT.md">View handoff</button>` : ""}
+      </div>
+      <details><summary>Recent sessions (${p.sessions.length})</summary><ul>
+        ${p.sessions.map((s) => `<li>${esc(name(s.agent))} · ${ago(s.updated)} — ${esc(s.title || "(untitled)")}</li>`).join("")}
+      </ul></details>
+    </div>`;
+  }).join("");
+  document.querySelectorAll("[data-continue]").forEach((b) => b.onclick = () => doContinue(b.dataset.continue, projects[b.dataset.i]));
+  document.querySelectorAll("[data-view]").forEach((b) => b.onclick = () => viewFile(b.dataset.view, "Handoff brief"));
+}
+
+function showError(msg) { $("error").hidden = !msg; $("error").textContent = msg || ""; }
+
+async function load(fresh) {
+  $("notice").textContent = fresh ? "Refreshing…" : "";
+  try {
+    const data = await api("/api/status" + (fresh ? "?fresh=1" : ""));
+    renderBanner(data.hooks);
+    renderProjects(data.projects);
+    showError("");
+    $("updated").textContent = "Updated " + new Date().toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
+  } catch (e) {
+    showError("Can't reach the Context Relay engine on this Mac: " + e);
+  }
+  if (fresh) $("notice").textContent = "";
+}
+
+async function doContinue(agent, project) {
+  if (busy) return;
+  busy = true;
+  document.querySelectorAll("[data-continue]").forEach((b) => b.disabled = true);
+  $("notice").textContent = `Preparing handoff to ${name(agent)}…`;
+  const r = await api("/api/continue", { agent, project: project.path });
+  busy = false;
+  document.querySelectorAll("[data-continue]").forEach((b) => b.disabled = false);
+  $("notice").textContent = "";
+  if (!r.ok) return showError(r.error);
+  const from = r.from_name, to = name(agent);
+  const steps = agent === "cursor"
+    ? `<li>Open <b>${esc(project.name)}</b> in Cursor. The handoff is already loaded as a project rule.</li>
+       <li>In Cursor's agent chat, say <b>continue</b>.</li>`
+    : `<li>In T3 Code (or a terminal on this Mac), start a <b>new ${esc(to)} chat</b> in this project:<div class="prompt">${esc(project.path)}</div></li>
+       <li>Send this as your first message:<div class="prompt" id="kickoff">${esc(r.prompt)}</div>
+           <button class="primary" id="copy">Copy prompt</button></li>`;
+  openDialog(`Ready to continue in ${esc(to)}`, `
+    <p>Picked up <b>${esc(from)}</b>'s session “${esc(r.title)}”: every message, tool call and result.</p>
+    <ol>${steps}</ol>
+    <p class="sub">With auto-handoff on, ${esc(to)} also receives this context automatically when the new chat starts.</p>
+    <div class="row"><button data-file="${esc(r.context)}" data-t="Handoff brief">View handoff brief</button>
+    <button data-file="${esc(r.transcript)}" data-t="Full transcript from ${esc(from)}">View full transcript</button></div>`);
+  const copy = $("copy");
+  if (copy) copy.onclick = async () => {
+    try { await navigator.clipboard.writeText(r.prompt); copy.textContent = "Copied ✓"; }
+    catch { getSelection().selectAllChildren($("kickoff")); copy.textContent = "Selected: press ⌘C"; }
+  };
+  $("dlg-body").querySelectorAll("[data-file]").forEach((b) => b.onclick = () => viewFile(b.dataset.file, b.dataset.t));
+  load(false);
+}
+
+async function viewFile(path, title) {
+  const text = await api("/api/file?path=" + encodeURIComponent(path));
+  openDialog(esc(title), `<div class="path">${esc(path)}</div><pre class="file">${esc(typeof text === "string" ? text : text.error)}</pre>`);
+}
+
+function openDialog(title, html) {
+  $("dlg-title").innerHTML = title;
+  $("dlg-body").innerHTML = html;
+  if (!$("dlg").open) $("dlg").showModal();
+  $("dlg-body").scrollTop = 0;
+}
+
+$("dlg-close").onclick = () => $("dlg").close();
+$("refresh").onclick = () => load(true);
+load(false);
+setInterval(() => { if (!$("dlg").open) load(false); }, 30000);
+</script>
+</body>
+</html>
