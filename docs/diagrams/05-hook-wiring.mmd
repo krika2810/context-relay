@@ -1,0 +1,12 @@
+flowchart LR
+    subgraph install["relay hooks install (first launch)"]
+        L["~/.relay/bin/context-relay<br/>(launcher → engine inside the app)"]
+    end
+    L --> C1["~/.claude/settings.json<br/>hooks.SessionStart"]
+    L --> C2["~/.codex/hooks.json<br/>hooks.SessionStart"]
+    L --> C3["~/.codex/AGENTS.md<br/>'run context-relay pull --for codex'"]
+    L --> C4["~/.cursor/hooks.json<br/>hooks.sessionStart"]
+    C1 --> O1["additionalContext"]
+    C2 --> O1
+    C3 --> O2["Codex runs the command<br/>and reads the brief"]
+    C4 --> O3["additional_context"]
