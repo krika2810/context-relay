@@ -2,14 +2,14 @@ import AppKit
 import ServiceManagement
 import SwiftUI
 
-final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
+final class AppDelegate: NSObject, NSApplicationDelegate {
     private let statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
-    private let menu = NSMenu()
+    private let popover = NSPopover()
     private var status: StatusResponse?
     private var lastError: String?
     private var refreshing = false
-    private var menuOpen = false
     private var timer: Timer?
+    private var noticeClear: DispatchWorkItem?
     private let state = AppState()
     private var window: NSWindow?
 
@@ -19,15 +19,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             image?.isTemplate = true
             button.image = image
             button.toolTip = "Context Relay"
+            button.target = self
+            button.action = #selector(togglePopover(_:))
         }
-        menu.delegate = self
-        menu.autoenablesItems = false
-        statusItem.menu = menu
-        populate()
+        let panel = NSHostingController(rootView: MenuBarView(state: state))
+        panel.sizingOptions = .preferredContentSize
+        popover.contentViewController = panel
+        popover.behavior = .transient
+        popover.animates = true
+        state.launchAtLogin = SMAppService.mainApp.status == .enabled
         NSApp.mainMenu = mainMenu()
         state.perform = { [weak self] action in self?.perform(action) }
         showWindow()
 
+        if ProcessInfo.processInfo.environment["RELAY_OPEN_PANEL"] != nil {  // UI testing: open the panel at launch
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1) { [weak self] in self?.togglePopover(nil) }
+        }
         timer = Timer.scheduledTimer(withTimeInterval: 60, repeats: true) { [weak self] _ in self?.refresh() }
         syncHooks()
     }
@@ -52,9 +59,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private func refresh() {
         guard !refreshing else { return }
         refreshing = true
+        state.refreshing = true
         Engine.call(["status", "--json"], as: StatusResponse.self) { [weak self] result in
             guard let self = self else { return }
             self.refreshing = false
+            self.state.refreshing = false
             switch result {
             case .success(let s): self.status = s; self.lastError = nil
             case .failure(let e): self.lastError = e.message
@@ -62,74 +71,24 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             self.state.status = self.status
             self.state.error = self.lastError
             self.state.updated = Date()
-            self.populate() // updates in place, also while the menu is open
         }
     }
 
-    // MARK: NSMenuDelegate
+    // MARK: Menu bar panel
 
-    func menuNeedsUpdate(_ menu: NSMenu) { populate() }
-
-    func menuWillOpen(_ menu: NSMenu) {
-        menuOpen = true
+    @objc private func togglePopover(_ sender: Any?) {
+        guard let button = statusItem.button else { return }
+        if popover.isShown {
+            popover.performClose(sender)
+            return
+        }
         refresh()
-    }
-
-    func menuDidClose(_ menu: NSMenu) { menuOpen = false }
-
-    // MARK: Menu rendering
-
-    private func populate() {
-        let input = MenuInput(status: status, error: lastError, launchAtLogin: SMAppService.mainApp.status == .enabled)
-        menu.removeAllItems()
-        add(MenuBuilder.build(input), to: menu)
-    }
-
-    private func add(_ entries: [MenuEntry], to menu: NSMenu) {
-        for entry in entries {
-            switch entry {
-            case .separator:
-                menu.addItem(.separator())
-            case .item(let spec):
-                menu.addItem(makeItem(spec))
-            case .submenu(let spec, let children):
-                let item = makeItem(spec)
-                let sub = NSMenu(title: spec.title)
-                sub.autoenablesItems = false
-                add(children, to: sub)
-                item.submenu = sub
-                item.isEnabled = true
-                menu.addItem(item)
-            }
-        }
-    }
-
-    private func makeItem(_ spec: ItemSpec) -> NSMenuItem {
-        let item = NSMenuItem(title: spec.title, action: nil, keyEquivalent: spec.keyEquivalent)
-        if let action = spec.action {
-            item.action = #selector(handleMenuItem(_:))
-            item.target = self
-            item.representedObject = action
-        }
-        item.isEnabled = spec.action != nil
-        item.state = spec.checked ? .on : .off
-        if let sub = spec.subtitle {
-            let text = NSMutableAttributedString(string: spec.title, attributes: [.font: NSFont.menuFont(ofSize: 0)])
-            text.append(NSAttributedString(string: "  " + sub, attributes: [
-                .font: NSFont.menuFont(ofSize: NSFont.smallSystemFontSize),
-                .foregroundColor: NSColor.secondaryLabelColor,
-            ]))
-            item.attributedTitle = text
-        }
-        return item
+        popover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
+        popover.contentViewController?.view.window?.makeKey()
+        NSApp.activate(ignoringOtherApps: true)
     }
 
     // MARK: Actions
-
-    @objc private func handleMenuItem(_ sender: NSMenuItem) {
-        guard let action = sender.representedObject as? MenuAction else { return }
-        perform(action)
-    }
 
     func perform(_ action: MenuAction) {
         switch action {
@@ -141,9 +100,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                 self.state.busy = false
                 if case .success(let r) = result, r.ok {
                     let from = r.fromAgent.map { Agent.displayName($0) } ?? "the previous agent"
-                    self.state.notice = agent == .cursor
-                        ? "Opened Cursor with \(from)'s context. Press Return in Cursor's chat to start (prompt is also on your clipboard)."
-                        : "Opened \(agent.displayName) with \(from)'s context."
+                    self.showNotice(agent == .cursor
+                        ? "Opened Cursor with \(from)'s context. Press Return in Cursor's chat to start (the prompt is also on your clipboard)."
+                        : "Opened \(agent.displayName) with \(from)'s context.")
                 } else {
                     self.state.notice = nil
                 }
@@ -151,6 +110,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                 self.refresh()
             }
         case .showWindow:
+            popover.performClose(nil)
             showWindow()
         case .setHooks(let install):
             UserDefaults.standard.set(true, forKey: "hooksConfigured")
@@ -171,6 +131,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         }
     }
 
+    /// Shows a confirmation in the window and the menu bar panel, then fades it out.
+    private func showNotice(_ text: String) {
+        state.notice = text
+        noticeClear?.cancel()
+        let clear = DispatchWorkItem { [weak self] in
+            if self?.state.notice == text { self?.state.notice = nil }
+        }
+        noticeClear = clear
+        DispatchQueue.main.asyncAfter(deadline: .now() + 8, execute: clear)
+    }
+
     private func report(_ result: Result<ActionResponse, EngineError>, title: String) {
         switch result {
         case .success(let r) where r.ok: break
@@ -189,7 +160,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         } catch {
             alert("Launch at Login failed", error.localizedDescription)
         }
-        populate()
+        state.launchAtLogin = SMAppService.mainApp.status == .enabled
     }
 
     // MARK: Window
@@ -217,7 +188,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     /// Switching to the app (Dock, Cmd-Tab, Spotlight) always shows the window.
     func applicationDidBecomeActive(_ notification: Notification) {
-        if window?.isVisible != true { showWindow() }
+        // Opening the menu bar panel also activates the app; don't pop the window over it.
+        if window?.isVisible != true && !popover.isShown { showWindow() }
     }
 
     /// Clicking the Dock icon or opening the app again brings the window back.

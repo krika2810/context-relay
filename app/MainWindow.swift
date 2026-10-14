@@ -8,6 +8,10 @@ final class AppState: ObservableObject {
     @Published var notice: String?
     @Published var busy = false
     @Published var updated: Date?
+    @Published var refreshing = false
+    @Published var launchAtLogin = false
+    /// Snapshot mode only: render this project's row as if hovered.
+    var previewHoverPath: String?
     var perform: (MenuAction) -> Void = { _ in }
 }
 
