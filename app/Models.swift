@@ -19,6 +19,19 @@ enum Agent: String, CaseIterable {
     }
 }
 
+// MARK: - Actions the UI can trigger
+
+enum MenuAction: Equatable {
+    case continueIn(agent: Agent, project: String)
+    case open(path: String)
+    case reveal(path: String)
+    case setHooks(install: Bool)
+    case refresh
+    case showWindow
+    case toggleLaunchAtLogin
+    case quit
+}
+
 // MARK: - Engine JSON contract
 
 struct Session: Decodable, Equatable {

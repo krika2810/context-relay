@@ -49,9 +49,18 @@ left. Context Relay removes that step. There is nothing to save, write or copy.
 
 ## What it looks like
 
-- **App window.** Recent projects, which agent touched each one last, and one-click
-  **Continue in Claude Code / Codex / Cursor**. The auto-handoff switch sits at the top.
-- **Menu bar (⟳).** The same actions, always one click away.
+<p align="center">
+  <img src="docs/screenshots/menubar-light.png" width="384" alt="Context Relay menu bar panel, light mode: recent projects with the last agent, branch and changes; hovering a project shows Continue in Claude, Codex or Cursor">
+  &nbsp;
+  <img src="docs/screenshots/menubar-dark.png" width="384" alt="Context Relay menu bar panel, dark mode, showing a handoff confirmation">
+</p>
+
+- **Menu bar panel (⟳).** Click the icon for your recent projects, each showing:
+  - which agent worked there last (color-coded)
+  - the branch, and how many files are uncommitted
+  - when it was last active
+  Hover a project to **Continue in Claude · Codex · Cursor**, or right-click it for more actions.
+- **App window.** The same projects in a larger view, with the auto-handoff switch at the top.
 - **Inside the agents.** No UI at all: a new session simply starts with the previous agent's context.
 
 ## Install
@@ -227,10 +236,10 @@ context-relay/
 ├── app/                    macOS app (Swift, AppKit + SwiftUI)
 │   ├── AppDelegate.swift   Window, menu bar item, actions, first-run hook setup
 │   ├── MainWindow.swift    SwiftUI window
-│   ├── MenuBuilder.swift   Menu model as pure functions (unit-testable)
+│   ├── MenuBarView.swift   SwiftUI menu bar panel (projects, hover-to-continue, status)
 │   ├── Engine.swift        Runs the Python engine off the main thread, decodes JSON
 │   ├── Models.swift        Codable types for the engine's JSON contract
-│   └── main.swift          Entry point + --self-test / --snapshot modes
+│   └── main.swift          Entry point + --snapshot mode (renders the UI to PNG)
 ├── scripts/
 │   ├── build-app.sh        Universal .app + zip, using only the Command Line Tools
 │   ├── make-icon.swift     Draws the app icon
@@ -271,8 +280,9 @@ scripts/build-app.sh                         # app bundle + zip
 # App checks without clicking anything:
 APP="dist/Context Relay.app/Contents/MacOS/ContextRelay"
 PYTHONPATH="dist/Context Relay.app/Contents/Resources/engine" python3 -m context_relay status --json > /tmp/s.json
-"$APP" --self-test /tmp/s.json           # prints the menu structure
-"$APP" --snapshot /tmp/s.json out.png    # renders the window to a PNG
+"$APP" --snapshot /tmp/s.json window.png                                # the app window
+"$APP" --snapshot /tmp/s.json panel.png --view menubar --dark --hover 0  # the menu bar panel
+RELAY_OPEN_PANEL=1 open ~/Applications/"Context Relay.app"               # open the panel at launch
 ```
 
 **Diagrams:** the README's diagrams are PNGs rendered from the Mermaid sources in

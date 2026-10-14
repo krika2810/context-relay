@@ -1,42 +1,33 @@
 import AppKit
 import SwiftUI
 
-/// `ContextRelay --self-test <status.json> [--now <iso8601>]`: prints the menu structure and exits.
-func runSelfTest(_ args: [String]) -> Never {
-    guard let i = args.firstIndex(of: "--self-test"), i + 1 < args.count else {
-        FileHandle.standardError.write(Data("usage: --self-test <status.json>\n".utf8))
-        exit(2)
-    }
-    var input = MenuInput()
-    if let j = args.firstIndex(of: "--now"), j + 1 < args.count, let d = Format.parseDate(args[j + 1]) {
-        input.now = d
-    }
-    do {
-        let data = try Data(contentsOf: URL(fileURLWithPath: args[i + 1]))
-        input.status = try StatusResponse.decode(data)
-    } catch {
-        FileHandle.standardError.write(Data("self-test: \(error)\n".utf8))
-        exit(1)
-    }
-    print(MenuBuilder.render(MenuBuilder.build(input)))
-    exit(0)
-}
-
-if CommandLine.arguments.contains("--self-test") { runSelfTest(CommandLine.arguments) }
-
-/// `ContextRelay --snapshot <status.json> <out.png>`: renders the main window offscreen and exits.
+/// `ContextRelay --snapshot <status.json> <out.png> [--view window|menubar] [--dark] [--hover <n>]`
+/// renders a view offscreen to a PNG and exits (used to check the UI without clicking anything).
 if let i = CommandLine.arguments.firstIndex(of: "--snapshot"), i + 2 < CommandLine.arguments.count {
     let args = CommandLine.arguments
+    func option(_ name: String) -> String? {
+        args.firstIndex(of: name).flatMap { $0 + 1 < args.count ? args[$0 + 1] : nil }
+    }
     _ = NSApplication.shared
     let state = AppState()
     state.status = try? StatusResponse.decode(Data(contentsOf: URL(fileURLWithPath: args[i + 1])))
     state.updated = Date()
-    let view = NSHostingView(rootView: MainView(state: state))
-    view.frame = NSRect(x: 0, y: 0, width: 760, height: 600)
-    let window = NSWindow(contentRect: view.frame, styleMask: [.titled], backing: .buffered, defer: false)
+    if let n = option("--hover").flatMap(Int.init), let projects = state.status?.projects, n < projects.count {
+        state.previewHoverPath = projects[n].path
+    }
+    if let notice = option("--notice") { state.notice = notice }
+    let menubar = option("--view") == "menubar"
+    let root: AnyView = menubar
+        ? AnyView(MenuBarView(state: state).background(Color(nsColor: .windowBackgroundColor)))
+        : AnyView(MainView(state: state))
+    let view = NSHostingView(rootView: root)
+    view.appearance = NSAppearance(named: args.contains("--dark") ? .darkAqua : .aqua)
+    let size = menubar ? view.fittingSize : NSSize(width: 760, height: 600)
+    view.frame = NSRect(origin: .zero, size: size)
+    let window = NSWindow(contentRect: view.frame, styleMask: [.borderless], backing: .buffered, defer: false)
     window.contentView = view
     view.layoutSubtreeIfNeeded()
-    RunLoop.main.run(until: Date().addingTimeInterval(0.5))
+    RunLoop.main.run(until: Date().addingTimeInterval(0.6))
     guard let rep = view.bitmapImageRepForCachingDisplay(in: view.bounds) else { exit(1) }
     view.cacheDisplay(in: view.bounds, to: rep)
     try? rep.representation(using: .png, properties: [:])?.write(to: URL(fileURLWithPath: args[i + 2]))
